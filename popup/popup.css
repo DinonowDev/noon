@@ -15,33 +15,6 @@ body {
   padding: 20px;
 }
 
-.header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-}
-
-.logo {
-  width: 36px;
-  height: 36px;
-  background: linear-gradient(135deg, #ff8c00, #ff6000);
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  font-size: 20px;
-  color: #fff;
-  flex-shrink: 0;
-}
-
-h1 {
-  font-size: 16px;
-  font-weight: 700;
-  color: #fff;
-}
-
 .setting-group {
   background: #2a2a3e;
   border: 1px solid #3a3a50;
@@ -56,13 +29,6 @@ h1 {
   font-weight: 600;
   color: #ddd;
   margin-bottom: 8px;
-}
-
-.setting-hint {
-  font-weight: 400;
-  font-size: 11px;
-  color: #777;
-  margin-left: 4px;
 }
 
 .slider-row {
