@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>noon</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">P</div>
+      <h1>noon</h1>
+    </div>
+
+    <p class="description">
+      Palindromes are automatically detected when a page loads.
+      Words and phrases that read the same forwards and backwards
+      (ignoring case, spaces &amp; punctuation) are highlighted.
+    </p>
+
+    <div class="actions">
+      <button id="btn-scan" class="btn btn-primary">
+        <span class="icon">🔍</span> Re-scan
+      </button>
+      <button id="btn-clear" class="btn btn-secondary" disabled>
+        <span class="icon">✕</span> Clear
+      </button>
+    </div>
+
+    <div id="result" class="result hidden">
+      <span id="result-count">0</span> palindrome(s) found
+    </div>
+
+    <div class="footer">
+      Matches appear highlighted on the page.<br>
+      Orange markers on the scrollbar show their positions.
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

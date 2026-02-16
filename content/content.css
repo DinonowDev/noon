@@ -1,0 +1,68 @@
+/* Palindrome highlight styling */
+.palindrome-highlight {
+  background-color: rgba(255, 165, 0, 0.4);
+  border-bottom: 2px solid #ff8c00;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.palindrome-highlight:hover {
+  background-color: rgba(255, 165, 0, 0.7);
+}
+
+/* Scrollbar marker track — fixed strip on the right edge */
+#palindrome-scrollbar-track {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 14px;
+  height: 100vh;
+  z-index: 2147483647;
+  pointer-events: none;
+}
+
+#palindrome-scrollbar-track .palindrome-marker {
+  position: absolute;
+  right: 1px;
+  width: 12px;
+  height: 4px;
+  background-color: #ff8c00;
+  border-radius: 1px;
+  pointer-events: auto;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 0.15s ease;
+}
+
+#palindrome-scrollbar-track .palindrome-marker:hover {
+  opacity: 1;
+  height: 6px;
+  margin-top: -1px;
+}
+
+/* Tooltip for scrollbar markers */
+#palindrome-scrollbar-track .palindrome-marker .marker-tooltip {
+  display: none;
+  position: absolute;
+  right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #333;
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  font-family: system-ui, -apple-system, sans-serif;
+  line-height: 1.4;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+#palindrome-scrollbar-track .palindrome-marker:hover .marker-tooltip {
+  display: block;
+}
