@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "noon",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Finds palindromes on web pages!",
-  "permissions": ["activeTab", "scripting"],
+  "permissions": ["activeTab", "scripting", "storage"],
   "action": {
     "default_popup": "popup/popup.html",
     "default_icon": {

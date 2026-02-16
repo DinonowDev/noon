@@ -42,11 +42,64 @@ h1 {
   color: #fff;
 }
 
-.description {
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: #aaa;
-  margin-bottom: 18px;
+.setting-group {
+  background: #2a2a3e;
+  border: 1px solid #3a3a50;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+
+.setting-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ddd;
+  margin-bottom: 8px;
+}
+
+.setting-hint {
+  font-weight: 400;
+  font-size: 11px;
+  color: #777;
+  margin-left: 4px;
+}
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.slider-row input[type="range"] {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: #3a3a50;
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+
+.slider-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ff8c00, #ff6000);
+  border: 2px solid #1a1a2e;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(255, 140, 0, 0.3);
+}
+
+.slider-value {
+  min-width: 24px;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 800;
+  color: #ff8c00;
 }
 
 .actions {
@@ -123,7 +176,7 @@ h1 {
 }
 
 .footer {
-  font-size: 11px;
+  font-size: 10px;
   color: #666;
   text-align: center;
   line-height: 1.5;

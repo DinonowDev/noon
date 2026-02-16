@@ -3,6 +3,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnClear = document.getElementById("btn-clear");
   const resultBox = document.getElementById("result");
   const resultCount = document.getElementById("result-count");
+  const slider = document.getElementById("min-length");
+  const sliderValue = document.getElementById("min-length-value");
 
   function showResult(count) {
     resultCount.textContent = count;
@@ -10,38 +12,56 @@ document.addEventListener("DOMContentLoaded", () => {
     btnClear.disabled = count === 0;
   }
 
-  function sendMessage(action) {
+  function sendToTab(msg, callback) {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (!tabs[0]) return;
-      chrome.tabs.sendMessage(tabs[0].id, { action }, (response) => {
+      chrome.tabs.sendMessage(tabs[0].id, msg, (response) => {
         if (chrome.runtime.lastError) {
           resultBox.classList.remove("hidden");
           resultBox.innerHTML = '<span style="color:#e55">Cannot access this page</span>';
           return;
         }
-        if (response) {
-          if (action === "clear") {
-            resultBox.classList.add("hidden");
-            btnClear.disabled = true;
-          } else {
-            showResult(response.count);
-          }
-        }
+        if (callback) callback(response);
       });
     });
   }
 
-  // Check current status on popup open (auto-scan already ran)
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (!tabs[0]) return;
-    chrome.tabs.sendMessage(tabs[0].id, { action: "status" }, (response) => {
-      if (chrome.runtime.lastError) return;
-      if (response && response.active) {
-        showResult(response.count);
-      }
+  function triggerScan() {
+    const minLength = parseInt(slider.value, 10);
+    sendToTab({ action: "scan", minLength }, (response) => {
+      if (response) showResult(response.count);
     });
+  }
+
+  // Load saved setting
+  chrome.storage.sync.get({ minPalindromeLength: 5 }, (settings) => {
+    slider.value = settings.minPalindromeLength;
+    sliderValue.textContent = settings.minPalindromeLength;
   });
 
-  btnScan.addEventListener("click", () => sendMessage("scan"));
-  btnClear.addEventListener("click", () => sendMessage("clear"));
+  // Slider: update display live, save + re-scan on release
+  slider.addEventListener("input", () => {
+    sliderValue.textContent = slider.value;
+  });
+
+  slider.addEventListener("change", () => {
+    const minLength = parseInt(slider.value, 10);
+    chrome.storage.sync.set({ minPalindromeLength: minLength });
+    triggerScan();
+  });
+
+  // Check current status on popup open (auto-scan already ran)
+  sendToTab({ action: "status" }, (response) => {
+    if (response && response.active) {
+      showResult(response.count);
+    }
+  });
+
+  btnScan.addEventListener("click", triggerScan);
+  btnClear.addEventListener("click", () => {
+    sendToTab({ action: "clear" }, () => {
+      resultBox.classList.add("hidden");
+      btnClear.disabled = true;
+    });
+  });
 });

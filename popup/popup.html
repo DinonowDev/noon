@@ -8,16 +8,19 @@
 </head>
 <body>
   <div class="container">
-    <div class="header">
-      <div class="logo">P</div>
-      <h1>noon</h1>
+    <div id="result" class="result hidden">
+      <span id="result-count">0</span> palindrome(s) found
     </div>
 
-    <p class="description">
-      Palindromes are automatically detected when a page loads.
-      Words and phrases that read the same forwards and backwards
-      (ignoring case, spaces &amp; punctuation) are highlighted.
-    </p>
+    <div class="setting-group">
+      <label class="setting-label" for="min-length">
+        Minimum length
+      </label>
+      <div class="slider-row">
+        <input type="range" id="min-length" min="3" max="20" value="5" step="1">
+        <span id="min-length-value" class="slider-value">5</span>
+      </div>
+    </div>
 
     <div class="actions">
       <button id="btn-scan" class="btn btn-primary">
@@ -28,13 +31,8 @@
       </button>
     </div>
 
-    <div id="result" class="result hidden">
-      <span id="result-count">0</span> palindrome(s) found
-    </div>
-
     <div class="footer">
-      Matches appear highlighted on the page.<br>
-      Orange markers on the scrollbar show their positions.
+      Palindromes are detected automatically on page load.
     </div>
   </div>
 

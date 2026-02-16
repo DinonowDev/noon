@@ -1,7 +1,8 @@
 (() => {
   "use strict";
 
-  const MIN_PALINDROME_LENGTH = 3;
+  const DEFAULT_MIN_LENGTH = 5;
+  let minPalindromeLength = DEFAULT_MIN_LENGTH;
   let highlights = [];
   let scrollbarTrack = null;
   let isActive = false;
@@ -137,7 +138,7 @@
     function tryExpand(lo, hi) {
       while (lo >= 0 && hi < clean.length && clean[lo] === clean[hi]) {
         const len = hi - lo + 1;
-        if (len >= MIN_PALINDROME_LENGTH) {
+        if (len >= minPalindromeLength) {
           const origStart = cleanToOrig[lo];
           const origEnd = cleanToOrig[hi];
           const key = origStart + ":" + origEnd;
@@ -310,17 +311,31 @@
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.action === "scan") {
+      if (typeof msg.minLength === "number") {
+        minPalindromeLength = msg.minLength;
+      }
       const count = scan();
       sendResponse({ count });
     } else if (msg.action === "clear") {
       cleanup();
       sendResponse({ count: 0 });
     } else if (msg.action === "status") {
-      sendResponse({ active: isActive, count: highlights.length });
+      sendResponse({ active: isActive, count: highlights.length, minLength: minPalindromeLength });
     }
     return true; // keep channel open for async
   });
 
+  // ── Listen for setting changes from other tabs / popup ─────────────
+  chrome.storage.onChanged.addListener((changes) => {
+    if (changes.minPalindromeLength) {
+      minPalindromeLength = changes.minPalindromeLength.newValue || DEFAULT_MIN_LENGTH;
+      scan();
+    }
+  });
+
   // ── Auto-scan on page load ───────────────────────────────────────────
-  scan();
+  chrome.storage.sync.get({ minPalindromeLength: DEFAULT_MIN_LENGTH }, (settings) => {
+    minPalindromeLength = settings.minPalindromeLength;
+    scan();
+  });
 })();
