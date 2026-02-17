@@ -6,6 +6,13 @@
   let highlights = [];
   let scrollbarTrack = null;
   let isActive = false;
+  let scanId = 0; // incremented to cancel stale async scans
+
+  // ── Utility ──────────────────────────────────────────────────────────
+
+  function isAlnum(ch) {
+    return (ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9");
+  }
 
   // ── Text node extraction ─────────────────────────────────────────────
 
@@ -21,11 +28,7 @@
       {
         acceptNode(node) {
           if (!node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
-          let el = node.parentElement;
-          while (el) {
-            if (SKIP_TAGS.has(el.tagName)) return NodeFilter.FILTER_REJECT;
-            el = el.parentElement;
-          }
+          if (SKIP_TAGS.has(node.parentElement?.tagName)) return NodeFilter.FILTER_REJECT;
           return NodeFilter.FILTER_ACCEPT;
         },
       }
@@ -35,157 +38,151 @@
     return nodes;
   }
 
-  // ── Palindrome scanning ──────────────────────────────────────────────
-  // Collect contiguous text runs (sequences of adjacent text nodes
-  // within the same block-level ancestor) and scan the concatenated
-  // string for palindromic substrings using expand-around-center.
+  // ── Text run grouping ────────────────────────────────────────────────
+  // Group text nodes by their nearest block-level ancestor.
+  // This is O(n·depth) total but avoids the O(n·depth²) pairwise
+  // findCommonAncestor approach.
+
+  const INLINE_DISPLAY = new Set([
+    "inline", "inline-block", "inline-flex", "inline-grid", "inline-table",
+  ]);
+
+  function getBlockAncestor(node) {
+    let el = node.parentElement;
+    while (el && el !== document.body) {
+      const display = getComputedStyle(el).display;
+      if (!INLINE_DISPLAY.has(display)) return el;
+      el = el.parentElement;
+    }
+    return document.body;
+  }
 
   function gatherTextRuns(textNodes) {
-    // Group text nodes that are part of the same visible "run" of text.
-    // A run breaks when there is a block-level boundary between nodes.
+    if (textNodes.length === 0) return [];
     const runs = [];
-    let currentRun = [];
+    let currentBlock = getBlockAncestor(textNodes[0]);
+    let currentRun = [textNodes[0]];
 
-    for (const tn of textNodes) {
-      if (currentRun.length === 0) {
-        currentRun.push(tn);
-        continue;
-      }
-      // Check if this node is in the same inline flow as the previous one
-      const prev = currentRun[currentRun.length - 1];
-      if (areInSameRun(prev, tn)) {
-        currentRun.push(tn);
+    for (let i = 1; i < textNodes.length; i++) {
+      const block = getBlockAncestor(textNodes[i]);
+      if (block === currentBlock) {
+        currentRun.push(textNodes[i]);
       } else {
         runs.push(currentRun);
-        currentRun = [tn];
+        currentBlock = block;
+        currentRun = [textNodes[i]];
       }
     }
-    if (currentRun.length) runs.push(currentRun);
+    runs.push(currentRun);
     return runs;
   }
 
-  function areInSameRun(a, b) {
-    // Quick heuristic: they share a common ancestor that is inline,
-    // or they are siblings / close cousins within an inline context.
-    const ancestor = findCommonAncestor(a, b);
-    if (!ancestor || ancestor === document.body || ancestor === document.documentElement) return false;
-    // If the common ancestor is a block element, they might still be in
-    // the same visual paragraph — accept if ancestor is a <p>, <div>, <li>, etc.
-    return true;
-  }
+  // ── Palindrome scanning ──────────────────────────────────────────────
+  // Uses flat arrays instead of per-character objects for the index map.
+  // runNodes[] and runOffsets[] store cumulative character offsets so we
+  // can binary-search for the owning text node of any character index.
 
-  function findCommonAncestor(a, b) {
-    const parents = new Set();
-    let node = a;
-    while (node) { parents.add(node); node = node.parentNode; }
-    node = b;
-    while (node) {
-      if (parents.has(node)) return node;
-      node = node.parentNode;
-    }
-    return null;
-  }
-
-  // Build a map from concatenated-string index → { textNode, offsetInNode }
-  function buildIndexMap(run) {
-    const map = [];
-    for (const tn of run) {
-      const text = tn.nodeValue;
-      for (let i = 0; i < text.length; i++) {
-        map.push({ node: tn, offset: i });
-      }
-    }
-    return map;
-  }
-
-  // Check if a position in the full text is at a word boundary
-  function isWordBoundary(fullText, index, side) {
-    // side: "start" means we check that the character BEFORE index is non-alnum
-    // side: "end" means we check that the character AFTER index is non-alnum
-    if (side === "start") {
-      if (index === 0) return true;
-      const ch = fullText[index - 1].toLowerCase();
-      return !((ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9"));
-    } else {
-      if (index >= fullText.length - 1) return true;
-      const ch = fullText[index + 1].toLowerCase();
-      return !((ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9"));
-    }
-  }
-
-  // Expand-around-center palindrome detection on the *cleaned* string,
-  // but we keep a mapping back to the original positions.
   function findPalindromesInRun(run) {
-    const indexMap = buildIndexMap(run);
-    const fullText = indexMap.map(m => {
-      return m.node.nodeValue[m.offset];
-    }).join("");
+    // Build flat concatenated text + node offset table
+    const runNodes = [];   // text node references
+    const runStarts = [];  // cumulative start index of each node in fullText
+    const parts = [];
+    let total = 0;
+    for (let n = 0; n < run.length; n++) {
+      const val = run[n].nodeValue;
+      runNodes.push(run[n]);
+      runStarts.push(total);
+      parts.push(val);
+      total += val.length;
+    }
+    const fullText = parts.join("");
+    if (total === 0) return [];
 
-    // Build cleaned ↔ original index mapping
-    const cleanToOrig = [];
+    // Build cleaned ↔ original index mapping (flat Int32Arrays)
     const lower = fullText.toLowerCase();
+    const cleanIndices = []; // cleanIndices[i] = original index of clean char i
+    const cleanChars = [];
     for (let i = 0; i < lower.length; i++) {
-      const ch = lower[i];
-      if ((ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9")) {
-        cleanToOrig.push(i);
+      if (isAlnum(lower[i])) {
+        cleanIndices.push(i);
+        cleanChars.push(lower[i]);
       }
     }
-    const clean = cleanToOrig.map(i => lower[i]).join("");
+    const cleanLen = cleanChars.length;
+    if (cleanLen < minPalindromeLength) return [];
 
+    // Expand-around-center — only record the outermost (maximal) palindrome
+    // per center, and only if it meets word-boundary + length requirements.
     const results = [];
-    const seen = new Set();
 
     function tryExpand(lo, hi) {
-      while (lo >= 0 && hi < clean.length && clean[lo] === clean[hi]) {
-        const len = hi - lo + 1;
-        if (len >= minPalindromeLength) {
-          const origStart = cleanToOrig[lo];
-          const origEnd = cleanToOrig[hi];
-          const key = origStart + ":" + origEnd;
-          if (!seen.has(key)) {
-            seen.add(key);
-            // Trim leading/trailing non-alphanumeric from the original span
-            results.push({ origStart, origEnd, length: len });
-          }
-        }
+      while (lo >= 0 && hi < cleanLen && cleanChars[lo] === cleanChars[hi]) {
         lo--;
         hi++;
       }
+      // lo+1..hi-1 is the maximal palindrome for this center
+      lo++;
+      hi--;
+      const len = hi - lo + 1;
+      if (len < minPalindromeLength) return;
+
+      const origStart = cleanIndices[lo];
+      const origEnd = cleanIndices[hi];
+
+      // Word boundary check (inline for speed)
+      if (origStart > 0 && isAlnum(lower[origStart - 1])) return;
+      if (origEnd < lower.length - 1 && isAlnum(lower[origEnd + 1])) return;
+
+      results.push(origStart, origEnd, len);
     }
 
-    for (let i = 0; i < clean.length; i++) {
+    for (let i = 0; i < cleanLen; i++) {
       tryExpand(i, i);     // odd-length
       tryExpand(i, i + 1); // even-length
     }
 
-    // Filter: only keep palindromes that start and end at word boundaries
-    const bounded = results.filter(r =>
-      isWordBoundary(fullText, r.origStart, "start") &&
-      isWordBoundary(fullText, r.origEnd, "end")
-    );
+    // results is a flat array of [origStart, origEnd, len, ...]
+    // Deduplicate: keep only maximal (non-dominated) palindromes
+    const count = results.length / 3;
+    if (count === 0) return [];
 
-    // Deduplicate: keep only maximal palindromes (remove substrings of larger ones)
-    bounded.sort((a, b) => b.length - a.length);
+    // Sort by length descending (index into flat triples)
+    const indices = new Array(count);
+    for (let i = 0; i < count; i++) indices[i] = i;
+    indices.sort((a, b) => results[b * 3 + 2] - results[a * 3 + 2]);
+
     const maximal = [];
-    for (const r of bounded) {
+    for (const idx of indices) {
+      const os = results[idx * 3];
+      const oe = results[idx * 3 + 1];
       let dominated = false;
-      for (const m of maximal) {
-        if (r.origStart >= m.origStart && r.origEnd <= m.origEnd) {
+      for (let j = 0; j < maximal.length; j++) {
+        if (os >= maximal[j][0] && oe <= maximal[j][1]) {
           dominated = true;
           break;
         }
       }
-      if (!dominated) maximal.push(r);
+      if (!dominated) maximal.push([os, oe]);
+    }
+
+    // Binary search helper: find which text node owns a given fullText index
+    function nodeAt(charIdx) {
+      let lo = 0, hi = runNodes.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (runStarts[mid] <= charIdx) lo = mid; else hi = mid - 1;
+      }
+      return { node: runNodes[lo], offset: charIdx - runStarts[lo] };
     }
 
     // Convert to Range objects
-    return maximal.map(r => {
-      const startInfo = indexMap[r.origStart];
-      const endInfo = indexMap[r.origEnd];
+    return maximal.map(([os, oe]) => {
+      const startInfo = nodeAt(os);
+      const endInfo = nodeAt(oe);
       const range = document.createRange();
       range.setStart(startInfo.node, startInfo.offset);
       range.setEnd(endInfo.node, endInfo.offset + 1);
-      return { range, text: fullText.slice(r.origStart, r.origEnd + 1) };
+      return { range, text: fullText.slice(os, oe + 1) };
     });
   }
 
@@ -199,15 +196,13 @@
       range.surroundContents(mark);
       highlights.push(mark);
     } catch {
-      // surroundContents fails if range crosses element boundaries;
-      // fall back to inserting around the extracted contents.
       try {
         const fragment = range.extractContents();
         mark.appendChild(fragment);
         range.insertNode(mark);
         highlights.push(mark);
       } catch {
-        // Skip this palindrome if we truly can't wrap it
+        return null;
       }
     }
     return mark;
@@ -232,13 +227,11 @@
   function addScrollbarMarker(element, text) {
     if (!scrollbarTrack) return;
     const rect = element.getBoundingClientRect();
-    const scrollTop = window.scrollY || document.documentElement.scrollTop;
-    const absoluteTop = rect.top + scrollTop;
+    const absoluteTop = rect.top + (window.scrollY || document.documentElement.scrollTop);
     const docHeight = Math.max(
       document.body.scrollHeight,
       document.documentElement.scrollHeight
     );
-    const viewportHeight = window.innerHeight;
     const pct = (absoluteTop / docHeight) * 100;
 
     const marker = document.createElement("div");
@@ -257,42 +250,64 @@
     scrollbarTrack.appendChild(marker);
   }
 
-  // ── Main scan ────────────────────────────────────────────────────────
+  // ── Main scan (async chunked) ──────────────────────────────────────
 
-  function scan() {
+  function scan(callback) {
     cleanup();
     isActive = true;
+    const thisScan = ++scanId;
 
     const textNodes = getTextNodes(document.body);
     const runs = gatherTextRuns(textNodes);
 
     let totalFound = 0;
     const palindromeElements = [];
+    let runIdx = 0;
 
     createScrollbarTrack();
 
-    for (const run of runs) {
-      const palindromes = findPalindromesInRun(run);
-      for (const { range, text } of palindromes) {
-        const mark = highlightRange(range, text);
-        if (mark && mark.isConnected) {
-          palindromeElements.push({ el: mark, text });
-          totalFound++;
+    function processChunk(deadline) {
+      // If a newer scan was started, abandon this one
+      if (thisScan !== scanId) return;
+
+      while (runIdx < runs.length) {
+        const palindromes = findPalindromesInRun(runs[runIdx]);
+        runIdx++;
+
+        for (const { range, text } of palindromes) {
+          const mark = highlightRange(range, text);
+          if (mark && mark.isConnected) {
+            palindromeElements.push({ el: mark, text });
+            totalFound++;
+          }
+        }
+
+        // Yield to the browser if we've used most of the idle time
+        if (deadline.timeRemaining() < 2 && runIdx < runs.length) {
+          requestIdleCallback(processChunk, { timeout: 100 });
+          return;
         }
       }
+
+      // All runs processed — add scrollbar markers in one batch
+      for (const { el, text } of palindromeElements) {
+        addScrollbarMarker(el, text);
+      }
+
+      if (callback) callback(totalFound);
     }
 
-    // Add scrollbar markers after all highlights are placed
-    for (const { el, text } of palindromeElements) {
-      addScrollbarMarker(el, text);
+    // Kick off the first chunk
+    if (runs.length === 0) {
+      if (callback) callback(0);
+    } else {
+      requestIdleCallback(processChunk, { timeout: 200 });
     }
-
-    return totalFound;
   }
 
   function cleanup() {
     isActive = false;
-    // Unwrap all highlight marks
+    scanId++; // cancel any in-flight async scan
     for (const mark of highlights) {
       if (mark.parentNode) {
         const parent = mark.parentNode;
@@ -314,15 +329,15 @@
       if (typeof msg.minLength === "number") {
         minPalindromeLength = msg.minLength;
       }
-      const count = scan();
-      sendResponse({ count });
+      scan((count) => sendResponse({ count }));
+      return true; // keep channel open for async response
     } else if (msg.action === "clear") {
       cleanup();
       sendResponse({ count: 0 });
     } else if (msg.action === "status") {
       sendResponse({ active: isActive, count: highlights.length, minLength: minPalindromeLength });
     }
-    return true; // keep channel open for async
+    return true;
   });
 
   // ── Listen for setting changes from other tabs / popup ─────────────
