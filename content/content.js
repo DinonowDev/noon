@@ -10,8 +10,9 @@
 
   // ── Utility ──────────────────────────────────────────────────────────
 
+  const RE_LETTER_OR_DIGIT = /^[\p{L}\p{N}]$/u;
   function isAlnum(ch) {
-    return (ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9");
+    return RE_LETTER_OR_DIGIT.test(ch);
   }
 
   // ── Text node extraction ─────────────────────────────────────────────
@@ -105,7 +106,9 @@
     for (let i = 0; i < lower.length; i++) {
       if (isAlnum(lower[i])) {
         cleanIndices.push(i);
-        cleanChars.push(lower[i]);
+        let ch = lower[i];
+        if (ch === "\u0622") ch = "\u0627"; // آ → ا
+        cleanChars.push(ch);
       }
     }
     const cleanLen = cleanChars.length;
