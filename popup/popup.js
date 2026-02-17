@@ -16,11 +16,7 @@ document.addEventListener("DOMContentLoaded", () => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (!tabs[0]) return;
       chrome.tabs.sendMessage(tabs[0].id, msg, (response) => {
-        if (chrome.runtime.lastError) {
-          resultBox.classList.remove("hidden");
-          resultBox.innerHTML = '<span style="color:#e55">Cannot access this page</span>';
-          return;
-        }
+        if (chrome.runtime.lastError) return;
         if (callback) callback(response);
       });
     });
