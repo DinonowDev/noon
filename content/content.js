@@ -335,7 +335,10 @@
   }
 
   function ensurePanel() {
-    if (panel) return;
+    if (panel) {
+      if (!panel.isConnected) document.body.appendChild(panel);
+      return;
+    }
     panel = createElement("div");
     panel.id = "noon-panel";
     panel.className = "hidden";
@@ -619,13 +622,28 @@
     });
   }
 
-  async function collectSitemapUrls(url, visited, signal) {
+  async function collectSitemapUrls(url, visited, signal, errors) {
     if (signal?.aborted) throw new Error("aborted");
     if (visited.has(url)) return [];
     visited.add(url);
-    const xmlText = await fetchText(url);
+    let xmlText;
+    try {
+      xmlText = await fetchText(url);
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      if (errors) errors.push({ url, error: err.message });
+      return [];
+    }
     if (signal?.aborted) throw new Error("aborted");
-    const xml = new DOMParser().parseFromString(xmlText, "application/xml");
+    
+    let xml;
+    try {
+      xml = new DOMParser().parseFromString(xmlText, "application/xml");
+    } catch (err) {
+      if (errors) errors.push({ url, error: "XML parsing failed" });
+      return [];
+    }
+
     const urlNodes = Array.from(xml.querySelectorAll("url > loc"));
     if (urlNodes.length > 0) {
       return urlNodes.map((node) => node.textContent.trim()).filter(Boolean);
@@ -636,7 +654,7 @@
       if (signal?.aborted) throw new Error("aborted");
       const nextUrl = node.textContent.trim();
       if (!nextUrl) continue;
-      const nested = await collectSitemapUrls(nextUrl, visited, signal);
+      const nested = await collectSitemapUrls(nextUrl, visited, signal, errors);
       for (const item of nested) all.push(item);
     }
     return all;
@@ -698,10 +716,11 @@
     }
     sitemapAbortController = new AbortController();
     const signal = sitemapAbortController.signal;
+    const errors = [];
 
     setPanelBusyState(true, "Fetching sitemap...");
     try {
-      const urls = await collectSitemapUrls(sitemapUrl, new Set(), signal);
+      const urls = await collectSitemapUrls(sitemapUrl, new Set(), signal, errors);
       if (signal.aborted) throw new Error("aborted");
 
       if (urls.length === 0) {
@@ -715,32 +734,38 @@
         4,
         async (pageUrl) => {
           if (signal.aborted) throw new Error("aborted");
-          const html = await fetchText(pageUrl);
-          if (signal.aborted) throw new Error("aborted");
-          
-          const doc = new DOMParser().parseFromString(html, "text/html");
-          const body = doc.body;
-          if (!body) return null;
-          const textNodes = getTextNodes(body, { skipPanel: false });
-          const fullText = textNodes.map((n) => n.nodeValue).join("");
-          const pals = findPalindromesInText(fullText);
-          for (const pal of pals) {
-            const wordCount = countWords(pal.text);
-            const word = pal.text;
+          try {
+            const html = await fetchText(pageUrl);
+            if (signal.aborted) throw new Error("aborted");
+            
+            const doc = new DOMParser().parseFromString(html, "text/html");
+            const body = doc.body;
+            if (!body) return null;
+            const textNodes = getTextNodes(body, { skipPanel: false });
+            const fullText = textNodes.map((n) => n.nodeValue).join("");
+            const pals = findPalindromesInText(fullText);
+            for (const pal of pals) {
+              const wordCount = countWords(pal.text);
+              const word = pal.text;
 
-            if (!grouped.has(wordCount)) {
-              grouped.set(wordCount, new Map());
+              if (!grouped.has(wordCount)) {
+                grouped.set(wordCount, new Map());
+              }
+              const wordMap = grouped.get(wordCount);
+
+              if (!wordMap.has(word)) {
+                wordMap.set(word, new Set());
+              }
+              wordMap.get(word).add(pageUrl);
+
+              total++;
             }
-            const wordMap = grouped.get(wordCount);
-
-            if (!wordMap.has(word)) {
-              wordMap.set(word, new Set());
-            }
-            wordMap.get(word).add(pageUrl);
-
-            total++;
+            return true;
+          } catch (err) {
+            if (signal.aborted || err.message === "aborted") throw err;
+            errors.push({ url: pageUrl, error: err.message });
+            return null;
           }
-          return true;
         },
         (done, totalCount) => {
           if (!signal.aborted) {
@@ -768,9 +793,11 @@
         title: deriveTitleFromUrl(sitemapUrl),
         finded_str: total,
         list,
+        errors: errors.length > 0 ? errors : undefined,
       };
       downloadJson(output, `palindromes-${Date.now()}.json`);
-      setPanelBusyState(false, `Done: ${total} palindromes`);
+      const errorMsg = errors.length > 0 ? ` (${errors.length} errors)` : "";
+      setPanelBusyState(false, `Done: ${total} palindromes${errorMsg}`);
     } catch (err) {
       if (err.message === "aborted" || signal.aborted) {
         setPanelBusyState(false, "Scan cancelled");
@@ -846,6 +873,35 @@
       if (!panelPinned && panelFab) panelFab.classList.remove("hidden");
       if (panelPinned) openPanel();
       scan();
+
+      // Watch for body replacement (Turbo Drive, SPAs)
+      const observer = new MutationObserver(() => {
+        if (panel && !panel.isConnected) {
+          document.body.appendChild(panel);
+        }
+        if (panelFab && !panelFab.isConnected) {
+          document.body.appendChild(panelFab);
+        }
+      });
+      if (document.body) {
+        observer.observe(document.body, { childList: true });
+      }
+
+      const rootObserver = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+          for (const node of m.addedNodes) {
+            if (node.tagName === "BODY") {
+              observer.disconnect();
+              observer.observe(node, { childList: true });
+              if (panel && !panel.isConnected) node.appendChild(panel);
+              if (panelFab && !panelFab.isConnected) node.appendChild(panelFab);
+            }
+          }
+        }
+      });
+      if (document.documentElement) {
+        rootObserver.observe(document.documentElement, { childList: true });
+      }
     }
   );
 })();
