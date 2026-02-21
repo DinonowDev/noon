@@ -15,6 +15,7 @@
   let panelOpen = false;
   let panelBusy = false;
   let sitemapAbortController = null;
+  let sitemapStatusText = "";
 
   // ── Utility ──────────────────────────────────────────────────────────
 
@@ -311,8 +312,16 @@
     if (!panelPinned && panelFab) panelFab.classList.remove("hidden");
   }
 
+  function notifySitemapStatus(busy, text) {
+    try {
+      chrome.runtime.sendMessage({ action: "sitemapStatus", busy, text });
+    } catch {}
+  }
+
   function setPanelBusyState(busy, text = "") {
     panelBusy = busy;
+    sitemapStatusText = text;
+    notifySitemapStatus(busy, text);
     if (!panel) return;
     const scanBtn = panel.querySelector("#noon-scan");
     const clearBtn = panel.querySelector("#noon-clear");
@@ -834,6 +843,11 @@
         runSitemapScan(msg.url.trim());
       }
       sendResponse({ ok: true });
+    } else if (msg.action === "cancelSitemap") {
+      if (sitemapAbortController) {
+        sitemapAbortController.abort();
+      }
+      sendResponse({ ok: true });
     } else if (msg.action === "status") {
       sendResponse({
         active: isActive,
@@ -841,6 +855,8 @@
         minLength: minPalindromeLength,
         maxLength: maxPalindromeLength,
         pinned: panelPinned,
+        sitemapBusy: panelBusy,
+        sitemapStatus: sitemapStatusText,
       });
     }
     return true;

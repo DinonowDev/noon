@@ -212,6 +212,15 @@ body {
   box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.2);
 }
 
+.status-text {
+  font-size: 12px;
+  color: #c5c5d6;
+}
+
+.status-text.hidden {
+  display: none;
+}
+
 .result {
   background: #2a2a3e;
   border: 1px solid #3a3a50;

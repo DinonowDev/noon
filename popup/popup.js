@@ -11,6 +11,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const pinToggle = document.getElementById("pin-panel");
   const sitemapInput = document.getElementById("sitemap-url");
   const sitemapButton = document.getElementById("btn-sitemap");
+  const sitemapStatus = document.getElementById("sitemap-status");
+  let sitemapBusy = false;
 
   function showResult(count) {
     resultCount.textContent = count;
@@ -99,6 +101,27 @@ document.addEventListener("DOMContentLoaded", () => {
     sendToTab({ action: "panelPin", pinned });
   });
 
+  function updateSitemapUI(isBusy, text) {
+    sitemapBusy = isBusy;
+    if (sitemapButton) {
+      if (isBusy) {
+        sitemapButton.innerHTML = `<span class="icon">⏹</span> Cancel`;
+        sitemapButton.classList.add("busy");
+      } else {
+        sitemapButton.innerHTML = `Scan sitemap`;
+        sitemapButton.classList.remove("busy");
+      }
+    }
+    if (sitemapStatus) {
+      if (text) {
+        sitemapStatus.textContent = text;
+        sitemapStatus.classList.remove("hidden");
+      } else {
+        sitemapStatus.classList.add("hidden");
+      }
+    }
+  }
+
   // Check current status on popup open (auto-scan already ran)
   sendToTab({ action: "status" }, (response) => {
     if (response?.minLength !== undefined) minInput.value = response.minLength;
@@ -106,6 +129,16 @@ document.addEventListener("DOMContentLoaded", () => {
     if (response?.pinned !== undefined) pinToggle.checked = response.pinned;
     normalizeRange(true);
     if (response && response.active) showResult(response.count);
+    
+    if (response?.sitemapBusy) {
+      updateSitemapUI(true, response.sitemapStatus || "Scanning...");
+    }
+  });
+
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.action === "sitemapStatus") {
+      updateSitemapUI(msg.busy, msg.text);
+    }
   });
 
   btnScan.addEventListener("click", triggerScan);
@@ -117,6 +150,10 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   sitemapButton.addEventListener("click", () => {
+    if (sitemapBusy) {
+      sendToTab({ action: "cancelSitemap" });
+      return;
+    }
     const url = sitemapInput.value.trim();
     if (!url) return;
     sendToTab({ action: "scanSitemap", url });
